@@ -1,0 +1,27 @@
+if not netNav then
+	if not os.loadAPI("netNav") then
+		error("could not load netNav API")
+	end
+end
+
+for _, side in ipairs(redstone.getSides()) do
+	if peripheral.getType(side) == "modem" then
+		rednet.open(side)
+	end
+end
+
+netNav.setMap("main", 30)
+ 
+local tArgs = {...}
+if #tArgs == 3 then
+	for i = 1, #tArgs do
+		if tonumber(tArgs[i]) then
+			tArgs[i] = tonumber(tArgs[i])
+		else
+			error("argument "..i.." must be a valid coordinate")
+		end
+	end
+	print(netNav.goto(tArgs[1], tArgs[2], tArgs[3]))
+else
+	error("arguments must be 3 or 4 numbers")
+end

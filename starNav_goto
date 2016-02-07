@@ -1,0 +1,19 @@
+if not starNav then
+	if not os.loadAPI("starNav") then
+		error("could not load starNav API")
+	end
+end
+
+local tArgs = {...}
+if #tArgs == 3 or #tArgs == 4 then
+	for i = 1, #tArgs do
+		if tonumber(tArgs[i]) then
+			tArgs[i] = tonumber(tArgs[i])
+		else
+			error("argument "..i.." must be a valid coordinate")
+		end
+	end
+	print(starNav.goto(tArgs[1], tArgs[2], tArgs[3], tArgs[4]))
+else
+	error("arguments must be 3 or 4 numbers")
+end
