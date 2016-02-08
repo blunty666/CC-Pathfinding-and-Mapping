@@ -284,8 +284,8 @@ end
 function setMap(mapName, mapTimeout)
 	if type(mapName) ~= "string" then
 		error("mapName must be string")
-	if type(mapTimeout) ~= "number" or mapTimeout < 0 then
 	end
+	if type(mapTimeout) ~= "number" or mapTimeout < 0 then
 		error("timeout must be positive number")
 	end
 	serverMap = remoteMap.new(mapName, mapTimeout)
@@ -293,4 +293,10 @@ end
 
 function getMap()
 	return serverMap
+end
+
+function getPosition()
+	if position then
+		return position:value()
+	end
 end

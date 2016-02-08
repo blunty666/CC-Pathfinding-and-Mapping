@@ -28,7 +28,7 @@ local MAIN_COORD_DISTANCE = 1024
 local sessionMidPoint
 local sessionMaxDistance
 local sessionMap
-local mainMap = tinyMap.new("starNavMaps")
+local mainMap
 
 local function sup_norm(a, b)
 	return math.max(math.abs(a.x - b.x), math.abs(a.y - b.y), math.abs(a.z - b.z))
@@ -50,106 +50,109 @@ local function distanceFunc(a, b)
 	return aStar.distance(a, b) -- we are assuming both coords are clear
 end
 
-local function getHeading()
-	local i = 0
-	while turtle.detect() do
-		if i == 4 then
-			if turtle.up() then
-				i = 0
-			else
-				error("help I'm trapped in a ridiculous place")
-			end
-		else
-			turtle.turnRight()
-			i = i + 1
+local directions = {
+	[vector.new(0, 0, 1)] = 0,
+	[vector.new(-1, 0, 0)] = 1,
+	[vector.new(0, 0, -1)] = 2,
+	[vector.new(1, 0, 0)] = 3,
+	[vector.new(0, 1, 0)] = 4,
+	[vector.new(0, -1, 0)] = 5,
+}
+
+local function deltaToDirection(delta)
+	for vec, dir in pairs(directions) do
+		if aStar.vectorEquals(delta, vec) then
+			return dir
 		end
 	end
+end
+
+local function tryMove()
+	for i = 1, 4 do
+		if turtle.forward() then
+			return true
+		end
+		turtle.turnRight()
+	end
+	return false
+end
+
+local function findPosition()
+	local move = turtle.up
+	while not tryMove() do
+		if not move() then
+			if move == turtle.up then
+				move = turtle.down
+				move()
+			else
+				error("trapped in a ridiculous place")
+			end
+		end
+	end
+	
 	local p1 = {gps.locate()}
 	if #p1 == 3 then
 		p1 = vector.new(unpack(p1))
 	else
 		error("no gps signal - phase 1")
 	end
-	i = 0
-	while not turtle.forward() do
-		if i > 5 then error("couldn't move to determine direction") end
-		i = i + 1
-		sleep(1)
+	
+	if not turtle.back() then
+		error("couldn't move to determine direction")
 	end
+	
 	local p2 = {gps.locate()}
-	turtle.back()
 	if #p2 == 3 then
 		p2 = vector.new(unpack(p2))
 	else
 		error("no gps signal - phase 2")
 	end
-	local dir = p2 - p1
-	if dir.x == 1 then
-		return 3
-	elseif dir.x == -1 then
-		return 1
-	elseif dir.z == 1 then
-		return 0
-	elseif dir.z == -1 then
-		return 2
+	
+	local direction = deltaToDirection(p1 - p2)
+	if direction and direction < 4 then
+		return location.new(p2.x, p2.y, p2.z, direction)
 	else
-		error("could not determine direction - phase 3")
+		return false
 	end
 end
 
 local function detect(currPos, adjPos)
-	local dir = adjPos - currPos
-	if dir.y == 1 then
-		return turtle.detectUp()
-	elseif dir.y == -1 then
-		return turtle.detectDown()
-	elseif dir.x == 1 then
-		position:setHeading(3)
-		return turtle.detect()
-	elseif dir.x == -1 then
-		position:setHeading(1)
-		return turtle.detect()
-	elseif dir.z == 1 then
-		position:setHeading(0)
-		return turtle.detect()
-	elseif dir.z == -1 then
-		position:setHeading(2)
-		return turtle.detect()
-	else
-		return false
+	local direction = deltaToDirection(adjPos - currPos)
+	if direction then
+		position:setHeading(direction)
+		if direction == 4 then
+			return turtle.detectUp()
+		elseif direction == 5 then
+			return turtle.detectDown()
+		else
+			return turtle.detect()
+		end
 	end
+	return false
 end
 
 local function inspect(currPos, adjPos)
-	local dir = adjPos - currPos
-	if dir.y == 1 then
-		return turtle.inspectUp()
-	elseif dir.y == -1 then
-		return turtle.inspectDown()
-	elseif dir.x == 1 then
-		position:setHeading(3)
-		return turtle.inspect()
-	elseif dir.x == -1 then
-		position:setHeading(1)
-		return turtle.inspect()
-	elseif dir.z == 1 then
-		position:setHeading(0)
-		return turtle.inspect()
-	elseif dir.z == -1 then
-		position:setHeading(2)
-		return turtle.inspect()
-	else
-		return false
+	local direction = deltaToDirection(adjPos - currPos)
+	if direction then
+		position:setHeading(direction)
+		if direction == 4 then
+			return turtle.inspectUp()
+		elseif direction == 5 then
+			return turtle.inspectDown()
+		else
+			return turtle.inspect()
+		end
 	end
+	return false
 end
 
 local function updateCoord(coord, isBlocked)
 	if isBlocked then
-		sessionMap:set(pos, SESSION_COORD_BLOCKED)
-		mainMap:set(pos, MAIN_COORD_BLOCKED)
+		sessionMap:set(coord, SESSION_COORD_BLOCKED)
+		mainMap:set(coord, MAIN_COORD_BLOCKED)
 	else
-		sessionMap:set(pos, SESSION_COORD_CLEAR)
-		mainMap:set(pos, MAIN_COORD_CLEAR)
+		sessionMap:set(coord, SESSION_COORD_CLEAR)
+		mainMap:set(coord, MAIN_COORD_CLEAR)
 	end
 end
 
@@ -205,31 +208,30 @@ local function scan(currPos)
 end
 
 local function move(currPos, adjPos)
-	if not detect(position, adjPos) then
-		local dir = adjPos - currPos
-		if dir.y == 1 then
+	local direction = deltaToDirection(adjPos - currPos)
+	if direction then
+		position:setHeading(direction)
+		if direction == 4 then
 			return position:up()
-		elseif dir.y == -1 then
+		elseif direction == 5 then
 			return position:down()
 		else
 			return position:forward()
 		end
-	else
-		return false
 	end
+	return false
 end
 
 function goto(x, y, z, maxDistance)
+	if not mainMap then
+		error("mainMap has not been specified")
+	end
 	if turtle.getFuelLevel() == 0 then
 		return false, "ran out of fuel"
 	end
 	if not position then
-		local heading = getHeading()
-		local currPos = {gps.locate()}
-		if #currPos == 3 then
-			local x, y, z = unpack(currPos)
-			position = location.new(x, y, z, heading)
-		else
+		position = findPosition()
+		if not position then
 			return false, "couldn't determine location"
 		end
 	end
@@ -244,7 +246,6 @@ function goto(x, y, z, maxDistance)
 	if not path then
 		return false, "no known path to goal"
 	end
-
 	while not aStar.vectorEquals(position, goal) do
 		local movePos = table.remove(path)
 		while not move(position, movePos) do
@@ -254,11 +255,9 @@ function goto(x, y, z, maxDistance)
 				sleep(math.random(0, 3))
 				local blockPresent2, blockData2 = inspect(position, movePos)
 				if blockPresent2 and (blockData2.name == "ComputerCraft:CC-TurtleAdvanced" or blockData2.name == "ComputerCraft:CC-Turtle") then -- the turtle is still there
-					sessionMap:set(movePos, SESSION_COORD_BLOCKED)
 					recalculate, isTurtle = true, true
 				end
 			elseif blockPresent then
-				scan(position) -- update map info
 				recalculate = true
 			elseif turtle.getFuelLevel() == 0 then
 				return false, "ran out of fuel"
@@ -266,15 +265,16 @@ function goto(x, y, z, maxDistance)
 				sleep(1)
 			end
 			if recalculate then
+				scan(position)
 				if sessionMap:get(goal) == SESSION_COORD_BLOCKED then return false, "goal is blocked" end
 				path = aStar.compute(distanceFunc, position, goal)
 				if not path then
 					return false, "no known path to goal"
 				end
-				movePos = table.remove(path)
 				if isTurtle then
 					sessionMap:set(movePos, nil)
 				end
+				movePos = table.remove(path)
 			end
 		end
 		if mainMap:get(movePos) then
@@ -282,6 +282,17 @@ function goto(x, y, z, maxDistance)
 		end
 	end
 	return true
+end
+
+function setMap(mapName)
+	if type(mapName) ~= "string" then
+		error("mapName must be string")
+	end
+	mainMap = tinyMap.new(mapName)
+end
+
+function getMap()
+	return mainMap
 end
 
 function getPosition()
