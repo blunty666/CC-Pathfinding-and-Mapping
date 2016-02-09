@@ -2,7 +2,6 @@ local tArgs = {...}
 
 local function printUsage()
 	print("Usage: viewRemoteMap <(string) mapName> <(int) x-coord> <(int) y-coord> <(int) z-coord>")
-	print("mapName must be the complete file path")
 end
 
 if not remoteMap then
@@ -17,76 +16,138 @@ for _, side in ipairs(redstone.getSides()) do
 	end
 end
 
+if not rednet.isOpen() then
+	error("could not open rednet")
+end
+
 if type(tArgs[1]) ~= "string" then
-	error("string expected for map name")
+	printError("string expected for map name")
+	printUsage()
+	return
 end
 local map = remoteMap.new(tArgs[1], 5)
 
-local startX, startY, startZ
+local currX, currY, currZ
 if #tArgs == 4 then
 	for i = 2, 4 do
 		local num = tArgs[i]
 		if not tonumber(num) or num % 1 ~= 0 then
+			printError("argument "..tostring(i).." is not a number")
 			printUsage()
 			return
 		end
 	end
-	startX = tArgs[2]
-	startY = tArgs[3]
-	startZ = tArgs[4]
+	currX = tArgs[2]
+	currY = tArgs[3]
+	currZ = tArgs[4]
+else
+	currX, currY, currZ = gps.locate(1)
+	if tonumber(currX) then
+		currX = math.floor(tonumber(currX))
+	end
+	if tonumber(currY) then
+		currY = math.floor(tonumber(currY))
+	end
+	if tonumber(currZ) then
+		currZ = math.floor(tonumber(currZ))
+	end
+end
+if not (currX and currY and currZ) then
+	printError("could not identify start coords")
+	printUsage()
+	return
 end
 
 term.setCursorBlink(false)
+term.setTextColour(colours.white)
 term.setBackgroundColour(colours.black)
+term.clear()
 
-local cont = true
 local width, height = term.getSize()
 local currW, currH = 1, 1
-term.setCursorBlink(true)
-term.setTextColour(colours.red)
+
+local mainWindow = window.create(term.current(), 1, 1, width, math.max(0, height - 1), false)
+mainWindow.setTextColour(colours.red)
+
+local toolbarWindow = window.create(term.current(), 1, height, width, 1, false)
+toolbarWindow.setBackgroundColour(colours.grey)
+toolbarWindow.setTextColour(colours.white)
+toolbarWindow.clear()
+
+local function redrawMainWindow()
+	mainWindow.setVisible(false)
+	
+	mainWindow.setBackgroundColour(colours.black)
+	mainWindow.clear()
+	mainWindow.setBackgroundColour(colours.white)
+	
+	local w, h = mainWindow.getSize()
+	for x = 1, w do
+		for z = 1, h do
+			local value = map:get(vector.new(currX + x - 1, currY, currZ + z - 1))
+			if value then
+				mainWindow.setCursorPos(x, z)
+				mainWindow.write(string.sub(value, 1, 1))
+			end
+		end
+	end
+	
+	local cursorValue = map:get(vector.new(currX + currW - 1, currY, currZ + currH - 1))
+	mainWindow.setBackgroundColour(colours.green)
+	mainWindow.setCursorPos(currW, currH)
+	if cursorValue then
+		mainWindow.write(string.sub(cursorValue, 1, 1))
+	else
+		mainWindow.write(" ")
+	end
+	
+	mainWindow.setVisible(true)
+end
+
+local function redrawToolbarWindow()
+	toolbarWindow.setVisible(false)
+	
+	toolbarWindow.setCursorPos(1, 1)
+	toolbarWindow.clearLine()
+	toolbarWindow.write(tostring(currX + currW - 1)..","..tostring(currY)..","..tostring(currZ + currH - 1))
+	toolbarWindow.write(" -- ")
+	toolbarWindow.write(tostring(math.floor( (currX + currW - 1)/16 )))
+	toolbarWindow.write(",")
+	toolbarWindow.write(tostring(math.floor( (currY)/16 )))
+	toolbarWindow.write(",")
+	toolbarWindow.write(tostring(math.floor( (currZ + currH - 1)/16 )))
+	
+	toolbarWindow.setVisible(true)
+end
+
+local cont = true
 local redraw = true
 while cont do
 	if redraw then
 		map:check()
-		term.setBackgroundColour(colours.black)
-		term.clear()
-		term.setCursorPos(1, height)
-		term.clearLine()
-		term.write(tostring(startX + currW - 1)..","..tostring(startY)..","..tostring(startZ + currH - 1))
-		term.write(" -- ")
-		term.write(tostring(math.floor( (startX + currW - 1)/16 )))
-		term.write(",")
-		term.write(tostring(math.floor( (startY)/16 )))
-		term.write(",")
-		term.write(tostring(math.floor( (startZ + currH - 1)/16 )))
-		for x = 1, width do
-			for z = 1, height - 1 do
-				local value = map:get(vector.new(startX + x - 1, startY, startZ + z - 1))
-				if value then
-					term.setBackgroundColour(colours.white)
-					term.setCursorPos(x, z)
-					term.write(string.sub(value, 1, 1))
-				end
-			end
-		end
-		term.setCursorPos(currW, currH)
+		redrawToolbarWindow()
+		redrawMainWindow()
 		redraw = false
 	end
 	local event = {os.pullEvent()}
 	if event[1] == "key" then
 		local key = event[2]
 		if key == keys.up then
-			startZ = startZ - 1
+			currZ = currZ - 1
+			currH = math.min(height - 1, currH + 1)
 		elseif key == keys.down then
-			startZ = startZ + 1
+			currZ = currZ + 1
+			currH = math.max(1, currH - 1)
 		elseif key == keys.left then
-			startX = startX - 1
+			currX = currX - 1
+			currW = math.min(width, currW + 1)
 		elseif key == keys.right then
-			startX = startX + 1
+			currX = currX + 1
+			currW = math.max(1, currW - 1)
 		elseif key == keys.numPadAdd then
-			startY = startY + 1
+			currY = currY + 1
 		elseif key == keys.numPadSubtract then
-			startY = startY - 1
+			currY = currY - 1
 		elseif key == keys.backspace then
 			cont = false
 		end
@@ -94,20 +155,12 @@ while cont do
 	elseif event[1] == "mouse_click" then
 		if event[4] < height then
 			currW, currH = event[3], event[4]
-			term.setBackgroundColour(colours.black)
-			term.setCursorPos(1, height)
-			term.clearLine()
-			term.write(tostring(startX + currW - 1)..","..tostring(startY)..","..tostring(startZ + currH - 1))
-			term.write(" -- ")
-			term.write(tostring(math.floor( (startX + currW - 1)/16 )))
-			term.write(",")
-			term.write(tostring(math.floor( (startY)/16 )))
-			term.write(",")
-			term.write(tostring(math.floor( (startZ + currH - 1)/16 )))
-			term.setCursorPos(currW, currH)
+			redraw = true
 		end
 	elseif event[1] == "term_resize" then
 		width, height = term.getSize()
+		mainWindow.reposition(1, 1, width, math.max(0, height - 1))
+		toolbarWindow.reposition(1, height, width, height)
 		redraw = true
 	end
 end
