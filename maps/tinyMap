@@ -55,6 +55,16 @@ end
 
 local mapMethods = {
 
+	getGrid = function(self, tVector, y, z)
+		local gX, gY, gZ
+		if y and z then
+			gX, gY, gZ = tVector, y, z
+		else
+			gX, gY, gZ = toGridCode(tVector)
+		end
+		return getGrid(self, gX, gY, gZ)
+	end,
+
 	load = function(self, tVector, y, z)
 		local gX, gY, gZ
 		if y and z then
@@ -123,33 +133,46 @@ local mapMethods = {
 		end
 	end,
 
-	save = function(self)
+	save = function(self, tVector, y, z)
+		local gX, gY, gZ
+		if y and z then
+			gX, gY, gZ = tVector, y, z
+		else
+			gX, gY, gZ = toGridCode(tVector)
+		end
+		if self.map[gX] and self.map[gX][gY] and self.map[gX][gY][gZ] then
+			local grid = self.map[gX][gY][gZ]
+			if next(grid) then
+				local rawData = {}
+				for x, gridYZ in pairs(grid) do
+					table.insert(rawData, BIT_MASKS.SET_COORD + BIT_MASKS.SET_X_COORD + x)
+					for y, gridZ in pairs(gridYZ) do
+						table.insert(rawData, BIT_MASKS.SET_COORD + y)
+						for z, coordValue in pairs(gridZ) do
+							table.insert(rawData, bit.blshift(coordValue, 4) + z)
+						end
+					end
+				end
+				--local data = rawData
+				local data = base64_to_base256(rawData)
+				local handle = fs.open(fs.combine(self.mapDir, gX..","..gY..","..gZ), "wb")
+				if handle then
+					for _, dataByte in ipairs(data) do
+						handle.write(dataByte)
+					end
+					handle.close()
+				end
+			else
+				fs.delete(fs.combine(self.mapDir, gX..","..gY..","..gZ))
+			end
+		end
+	end,
+	
+	saveAll = function(self)
 		for gX, YZmap in pairs(self.map) do
 			for gY, Zmap in pairs(YZmap) do
 				for gZ, grid in pairs(Zmap) do
-					if next(grid) then
-						local rawData = {}
-						for x, gridYZ in pairs(grid) do
-							table.insert(rawData, BIT_MASKS.SET_COORD + BIT_MASKS.SET_X_COORD + x)
-							for y, gridZ in pairs(gridYZ) do
-								table.insert(rawData, BIT_MASKS.SET_COORD + y)
-								for z, coordValue in pairs(gridZ) do
-									table.insert(rawData, bit.blshift(coordValue, 4) + z)
-								end
-							end
-						end
-						--local data = rawData
-						local data = base64_to_base256(rawData)
-						local handle = fs.open(fs.combine(self.mapDir, gX..","..gY..","..gZ), "wb")
-						if handle then
-							for _, dataByte in ipairs(data) do
-								handle.write(dataByte)
-							end
-							handle.close()
-						end
-					else
-						fs.delete(fs.combine(self.mapDir, gX..","..gY..","..gZ))
-					end
+					self:save(gX, gY, gZ)
 				end
 			end
 		end
@@ -166,7 +189,7 @@ local mapMethods = {
 	set = function(self, tVector, value)
 		if not isValidValue(value) then
 			--should we throw an error or use a default value?
-			error("set: value is not valid", 2)
+			error("set: value is not valid")
 		end
 		local gX, gY, gZ, pX, pY, pZ = toGridCode(tVector)
 		local grid = getGrid(self, gX, gY, gZ)
@@ -188,7 +211,7 @@ local mapMethods = {
 		else
 			if not isValidValue(value) then
 				--should we throw an error or use a default value?
-				error("getOrSet: value is not valid", 2)
+				error("getOrSet: value is not valid")
 			end
 			if not grid[pX] then
 				grid[pX] = {}
@@ -210,11 +233,11 @@ function new(mapDir)
 		if not fs.exists(mapDir) then
 			fs.makeDir(mapDir)
 		elseif not fs.isDir(mapDir) then
-			error("new: not a valid directory", 2)
+			error("new: not a valid directory")
 		end
 		tMap.mapDir = mapDir
 	else
-		error("new: directory must be string", 2)
+		error("new: directory must be string")
 	end
 	tMap.map = {}
 	setmetatable(tMap, mapMetatable)

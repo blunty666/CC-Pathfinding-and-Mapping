@@ -153,7 +153,7 @@ local mapMethods = {
 	set = function(self, tVector, value)
 		if not isValidValue(value) then
 			--should we throw an error or use a default value?
-			error("compactMap set: value is not valid", 2)
+			error("set: value is not valid")
 		end
 		local gX, gY, gZ, pX, pY, pZ = toGridCode(tVector)
 		local grid = getGrid(self, gX, gY, gZ)
@@ -175,7 +175,7 @@ local mapMethods = {
 		else
 			if not isValidValue(value) then
 				--should we throw an error or use a default value?
-				error("compactMap getOrSet: value is not valid", 2)
+				error("getOrSet: value is not valid")
 			end
 			if not grid[pX] then
 				grid[pX] = {}
@@ -197,11 +197,11 @@ function new(mapDir)
 		if not fs.exists(mapDir) then
 			fs.makeDir(mapDir)
 		elseif not fs.isDir(mapDir) then
-			error("compactMap new: not a valid directory", 2)
+			error("new: not a valid directory")
 		end
 		tMap.mapDir = mapDir
 	else
-		error("compactMap new: directory must be string", 2)
+		error("new: directory must be string")
 	end
 	tMap.map = {}
 	setmetatable(tMap, mapMetatable)

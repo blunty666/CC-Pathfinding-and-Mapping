@@ -1,5 +1,3 @@
-local maps = {}
-
 local function toGridCode(tVector)
 	return math.floor(tVector.x/16), math.floor(tVector.y/16), math.floor(tVector.z/16), tVector.x % 16, tVector.y % 16, tVector.z % 16
 end
@@ -23,7 +21,17 @@ local function getGrid(tMap, x, y, z)
 	end
 end
 
-local methods = {
+local mapMethods = {
+
+	getGrid = function(self, tVector, y, z)
+		local gX, gY, gZ
+		if y and z then
+			gX, gY, gZ = tVector, y, z
+		else
+			gX, gY, gZ = toGridCode(tVector)
+		end
+		return getGrid(self, gX, gY, gZ)
+	end,
 
 	load = function(self, tVector, y, z)
 		local gX, gY, gZ
@@ -32,19 +40,15 @@ local methods = {
 		else
 			gX, gY, gZ = toGridCode(tVector)
 		end
-		if self.name then
-			if fs.exists(".maps/"..self.name.."/"..gX..","..gY..","..gZ) then
-				local handle = fs.open(".maps/"..self.name.."/"..gX..","..gY..","..gZ, "r")
-				if handle then
-					local grid = handle.readAll()
-					handle.close()
-					for i = 15, 0, -1 do
-						grid = string.gsub(grid, tostring(i).."=", "%["..tostring(i).."%]=")
-					end
-					grid = textutils.unserialize(grid)
-					if type(grid) == "table" then
-						return setGrid(self, gX, gY, gZ, grid)
-					end
+		local gridPath = fs.combine(self.mapDir, gX..","..gY..","..gZ)
+		if fs.exists(gridPath) then
+			local handle = fs.open(gridPath, "r")
+			if handle then
+				local grid = handle.readAll()
+				handle.close()
+				grid = textutils.unserialise(grid)
+				if type(grid) == "table" then
+					return setGrid(self, gX, gY, gZ, grid)
 				end
 			end
 		end
@@ -52,8 +56,8 @@ local methods = {
 	end,
 
 	loadAll = function(self)
-		if self.name and fs.exists(".maps/"..self.name) and fs.isDir(".maps/"..self.name) then
-			for _, gridFile in ipairs(fs.list(".maps/"..self.name)) do
+		if fs.exists(self.mapDir) and fs.isDir(self.mapDir) then
+			for _, gridFile in ipairs(fs.list(self.mapDir)) do
 				local _, _, gX, gY, gZ = string.find(gridFile, "(.+)%,(.+)%,(.+)")
 				if gX and gY and gX then
 					self:load(tonumber(gX), tonumber(gY), tonumber(gZ))
@@ -62,23 +66,32 @@ local methods = {
 		end
 	end,
 
-	save = function(self)
-		if self.name then
-			local saveDir = ".maps/"..self.name
-			for x, YZmap in pairs(self.map) do
-				for y, Zmap in pairs(YZmap) do
-					for z, grid in pairs(Zmap) do
-						if next(grid) then
-							local handle = fs.open(fs.combine(saveDir, x..","..y..","..z), "w")
-							local data = textutils.serialize(grid)
-							data = string.gsub(data, " ", "")
-							for i = 0, 15 do
-								data, num = string.gsub(data, "%["..tostring(i).."%]=", tostring(i).."=")
-							end
-							handle.write(data)
-							handle.close()
-						end
-					end
+	save = function(self, tVector, y, z)
+		local gX, gY, gZ
+		if y and z then
+			gX, gY, gZ = tVector, y, z
+		else
+			gX, gY, gZ = toGridCode(tVector)
+		end
+		if self.map[gX] and self.map[gX][gY] and self.map[gX][gY][gZ] then
+			local grid = self.map[gX][gY][gZ]
+			if next(grid) then
+				local handle = fs.open(fs.combine(self.mapDir, gX..","..gY..","..gZ), "w")
+				if handle then
+					handle.write(textutils.serialise(grid))
+					handle.close()
+				end
+			else
+				fs.delete(fs.combine(self.mapDir, gX..","..gY..","..gZ))
+			end
+		end
+	end,
+	
+	saveAll = function(self)
+		for gX, YZmap in pairs(self.map) do
+			for gY, Zmap in pairs(YZmap) do
+				for gZ, grid in pairs(Zmap) do
+					self:save(gX, gY, gZ)
 				end
 			end
 		end
@@ -123,20 +136,21 @@ local methods = {
 	end,
 
 }
+local mapMetatable = {__index = mapMethods}
 
-function new(name)
+function new(mapDir)
 	local tMap = {}
-	if name and type(name) == "string" then
-		if maps[name] then
-			return maps[name]
+	if type(mapDir) == "string" then
+		if not fs.exists(mapDir) then
+			fs.makeDir(mapDir)
+		elseif not fs.isDir(mapDir) then
+			error("new: not a valid directory")
 		end
-		tMap.name = name
-		if not fs.exists(".maps/"..name) then
-			fs.makeDir(".maps/"..name)
-		end
-		maps[name] = tMap
+		tMap.mapDir = mapDir
+	else
+		error("new: directory must be string")
 	end
 	tMap.map = {}
-	setmetatable(tMap, {__index = methods})
+	setmetatable(tMap, mapMetatable)
 	return tMap
 end

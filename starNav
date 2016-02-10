@@ -204,7 +204,7 @@ local function scan(currPos)
 	else
 		detectAll(currPos)
 	end
-	mainMap:save()
+	mainMap:saveAll()
 end
 
 local function move(currPos, adjPos)
