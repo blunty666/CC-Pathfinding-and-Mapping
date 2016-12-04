@@ -27,18 +27,15 @@ local MAIN_COORD_DISTANCE = 1024
 
 local sessionMidPoint
 local sessionMaxDistance
+
 local sessionMap
 local mainMap
 
-local function sup_norm(a, b)
-	return math.max(math.abs(a.x - b.x), math.abs(a.y - b.y), math.abs(a.z - b.z))
-end
-
 local function distanceFunc(a, b)
 	local sessionMapA, sessionMapB = sessionMap:get(a), sessionMap:get(b)
-	if sup_norm(a, sessionMidPoint) > sessionMaxDistance then
+	if aStar.distance(a, sessionMidPoint) > sessionMaxDistance then
 		return SESSION_COORD_DISTANCE -- first coord is outside the search region
-	elseif sup_norm(b, sessionMidPoint) > sessionMaxDistance then
+	elseif aStar.distance(b, sessionMidPoint) > sessionMaxDistance then
 		return SESSION_COORD_DISTANCE -- second coord is outside the search region
 	elseif sessionMapA == SESSION_COORD_BLOCKED or sessionMapB == SESSION_COORD_BLOCKED then
 		return SESSION_COORD_DISTANCE -- one of the coords has been found to be blocked this during this session
@@ -201,6 +198,17 @@ local function scan(currPos)
 			end
 			blockInfo.checked = true
 		end
+		for _, blockInfo in ipairs(rawBlockInfo) do
+			local pos = currPos + vector.new(blockInfo.x, blockInfo.y, blockInfo.z)
+			local blockInfo = sortedBlockInfo:get(pos)
+			if not blockInfo.checked then
+				if blockInfo.type == "AIR" then
+					sessionMap:set(pos, SESSION_COORD_CLEAR)
+				else
+					sessionMap:set(pos, SESSION_COORD_BLOCKED)
+				end
+			end
+		end
 	else
 		detectAll(currPos)
 	end
@@ -222,7 +230,7 @@ local function move(currPos, adjPos)
 	return false
 end
 
-function goto(x, y, z, maxDistance)
+local function _goto(x, y, z, maxDistance)
 	if not mainMap then
 		error("mainMap has not been specified")
 	end
@@ -240,12 +248,13 @@ function goto(x, y, z, maxDistance)
 
 	sessionMap = aStar.newMap()
 	sessionMidPoint = vector.new(math.floor((goal.x + position.x)/2), math.floor((goal.y + position.y)/2), math.floor((goal.z + position.z)/2))
-	sessionMaxDistance = (type(maxDistance) == "number" and maxDistance) or math.max(2*sup_norm(sessionMidPoint, goal), SESSION_MAX_DISTANCE_DEFAULT)
+	sessionMaxDistance = (type(maxDistance) == "number" and maxDistance) or math.max(2*aStar.distance(sessionMidPoint, goal), SESSION_MAX_DISTANCE_DEFAULT)
 
 	local path = aStar.compute(distanceFunc, position, goal)
 	if not path then
 		return false, "no known path to goal"
 	end
+
 	while not aStar.vectorEquals(position, goal) do
 		local movePos = table.remove(path)
 		while not move(position, movePos) do
@@ -281,7 +290,25 @@ function goto(x, y, z, maxDistance)
 			mainMap:set(movePos, MAIN_COORD_CLEAR)
 		end
 	end
+
+	mainMap:saveAll()
+
 	return true
+end
+
+local isRunning = false
+function goto(...)
+	if isRunning then
+		return false, "already running"
+	end
+	isRunning = true
+	local passback = {pcall(_goto, ...)}
+	isRunning = false
+	if not passback[1] then
+		printError(passback[2])
+		return false
+	end
+	return unpack(passback, 2)
 end
 
 function setMap(mapName)
