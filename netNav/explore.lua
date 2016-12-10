@@ -1,9 +1,28 @@
 local tArgs = {...}
 
+-- CONSTANTS
+local REDNET_PROTOCOL = "NET_NAV:CONTROL"
+
+-- VARIABLES
+local minX, minY, minZ
+local maxX, maxY, maxZ
+local mapName
+local states
+local state, arguments
+local idle
+local startX, startY, startZ
+
+-- CHECK MAP NAME
+mapName = tArgs[1]
+if type(mapName) ~= "string" then
+	printError("mapName must be string")
+	return
+end
+
 -- FIND AREA BOUNDARIES
-local minX, minY, minZ = unpack(tArgs, 2, 4)
+minX, minY, minZ = unpack(tArgs, 2, 4)
 minX, minY, minZ = tonumber(minX), tonumber(minY), tonumber(minZ)
-local maxX, maxY, maxZ = unpack(tArgs, 5, 7)
+maxX, maxY, maxZ = unpack(tArgs, 5, 7)
 maxX, maxY, maxZ = tonumber(maxX), tonumber(maxY), tonumber(maxZ)
 local function isInteger(var)
 	return type(var) == "number" and math.floor(var) == var
@@ -37,36 +56,82 @@ if not rednet.isOpen() then
 end
 
 -- SET NETNAV MAP
-local mapName = tArgs[1]
-if type(mapName) ~= "string" then
-	printError("mapName must be string")
-	return
-end
 netNav.setMap(mapName, 15)
 
-local exit = false
-local returning = false
-
-local function main()
-	local startX, startY, startZ = gps.locate(1)
-	while turtle.getFuelLevel() > 0 and not exit do
+-- SET UP STATES
+local states = {
+	EXPLORE = function()
 		local x = math.random(minX, maxX)
 		local y = math.random(minY, maxY)
 		local z = math.random(minZ, maxZ)
 		netNav.goto(x, y, z)
+	end,
+	RETURN = function()
+		netNav.goto(startX, startY, startZ)
+		state = "IDLE"
+	end,
+	FOLLOW = function(xPos, yPos, zPos)
+		netNav.goto(xPos, yPos, zPos)
+		state = "IDLE"
+	end,
+	IDLE = function()
+		idle = true
+		while idle do
+			os.pullEvent()
+		end
+	end,
+}
+
+-- FIND START POSITION
+startX, startY, startZ = gps.locate(1)
+-- check coords valid
+
+-- STATUS UPDATE FUNCTION
+local function sendStatus(senderID)
+	local status = {
+		mapName,
+		senderID,
+		"PONG",
+		{netNav.getPosition()},
+		state,
+		arguments,
+	}
+	if senderID == -1 then
+		rednet.broadcast(status, REDNET_PROTOCOL)
+	else
+		rednet.send(senderID, status, REDNET_PROTOCOL)
 	end
-	returning = true
-	netNav.goto(startX, startY, startZ)
 end
 
+-- DEFINE CONTROL ROUTINE
 local function control()
 	while true do
-		local senderID, message = rednet.receive("explore:return_to_base")
-		if not exit and not returning then
-			netNav.stop()
-			exit = true
+		local senderID, message = rednet.receive(REDNET_PROTOCOL)
+		if type(message) == "table" and message[1] == mapName then
+			local sentTo = message[2]
+			if sentTo == os.computerID() or sentTo == -1 then
+				local request = message[3]
+				if request == "PING" then
+					sendStatus(senderID)
+				elseif states[request] then
+					state, arguments = request, message[4]
+					netNav.stop()
+					idle = false
+				end
+			end
 		end
 	end
 end
 
-parallel.waitForAny(main, control)
+-- DEFINE MAIN ROUTINE
+local function main()
+	state, arguments = "EXPLORE", {}
+	while true do
+		sendStatus(-1)
+		if states[state] then
+			states[state](unpack(arguments))
+		end
+	end
+end
+
+parallel.waitForAny(control, main)
