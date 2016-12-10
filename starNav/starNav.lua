@@ -1,16 +1,13 @@
-if not tinyMap then
-	if not os.loadAPI("tinyMap") then
-		error("could not load tinyMap API")
-	end
-end
-if not aStar then
-	if not os.loadAPI("aStar") then
-		error("could not load aStar API")
-	end
-end
-if not location then
-	if not os.loadAPI("location") then
-		error("could not load location API")
+local apis = {
+	"tinyMap",
+	"aStar",
+	"location",
+}
+for _ api in ipairs(apis) do
+	if not _G[api] then
+		if not os.loadAPI(api) then
+			error("could not load API: "..api)
+		end
 	end
 end
 
@@ -38,13 +35,13 @@ local function distanceFunc(a, b)
 	elseif aStar.distance(b, sessionMidPoint) > sessionMaxDistance then
 		return SESSION_COORD_DISTANCE -- second coord is outside the search region
 	elseif sessionMapA == SESSION_COORD_BLOCKED or sessionMapB == SESSION_COORD_BLOCKED then
-		return SESSION_COORD_DISTANCE -- one of the coords has been found to be blocked this during this session
-	elseif sessionMapA == SESSION_COORD_CLEAR and sessionMapA == SESSION_COORD_CLEAR then
-		return aStar.distance(a, b) -- both coords has been found to be clear this during this session
+		return SESSION_COORD_DISTANCE -- we have found one of these coords to be blocked during this session
+	elseif sessionMapA == SESSION_COORD_CLEAR and sessionMapB == SESSION_COORD_CLEAR then
+		return aStar.distance(a, b) -- we have found both of these coords to be clear during this session
 	elseif mainMap:get(a) or mainMap:get(b) then
 		return MAIN_COORD_DISTANCE
 	end
-	return aStar.distance(a, b) -- we are assuming both coords are clear
+	return aStar.distance(a, b) -- we dont know anything useful so just calc the distance
 end
 
 local directions = {
@@ -230,7 +227,9 @@ local function move(currPos, adjPos)
 	return false
 end
 
+local exit = false
 local function _goto(x, y, z, maxDistance)
+	exit = false
 	if not mainMap then
 		error("mainMap has not been specified")
 	end
@@ -246,7 +245,7 @@ local function _goto(x, y, z, maxDistance)
 	
 	local goal = vector.new(tonumber(x), tonumber(y), tonumber(z))
 
-	sessionMap = aStar.newMap()
+	sessionMap = aStar.newMap() -- reset the sessionMap
 	sessionMidPoint = vector.new(math.floor((goal.x + position.x)/2), math.floor((goal.y + position.y)/2), math.floor((goal.z + position.z)/2))
 	sessionMaxDistance = (type(maxDistance) == "number" and maxDistance) or math.max(2*aStar.distance(sessionMidPoint, goal), SESSION_MAX_DISTANCE_DEFAULT)
 
@@ -255,7 +254,7 @@ local function _goto(x, y, z, maxDistance)
 		return false, "no known path to goal"
 	end
 
-	while not aStar.vectorEquals(position, goal) do
+	while not (exit or aStar.vectorEquals(position, goal)) do
 		local movePos = table.remove(path)
 		while not move(position, movePos) do
 			local blockPresent, blockData = inspect(position, movePos)
@@ -293,7 +292,7 @@ local function _goto(x, y, z, maxDistance)
 
 	mainMap:saveAll()
 
-	return true
+	return aStar.vectorEquals(position, goal)
 end
 
 local isRunning = false
@@ -311,6 +310,11 @@ function goto(...)
 	return unpack(passback, 2)
 end
 
+function stop()
+	if isRunning then
+		exit = true
+	end
+end
 function setMap(mapName)
 	if type(mapName) ~= "string" then
 		error("mapName must be string")

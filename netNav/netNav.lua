@@ -1,16 +1,13 @@
-if not remoteMap then
-	if not os.loadAPI("remoteMap") then
-		error("could not load remoteMap API")
-	end
-end
-if not aStar then
-	if not os.loadAPI("aStar") then
-		error("could not load aStar API")
-	end
-end
-if not location then
-	if not os.loadAPI("location") then
-		error("could not load location API")
+local apis = {
+	"remoteMap",
+	"aStar",
+	"location",
+}
+for _ api in ipairs(apis) do
+	if not _G[api] then
+		if not os.loadAPI(api) then
+			error("could not load API: "..api)
+		end
 	end
 end
 
@@ -20,9 +17,10 @@ local SESSION_MAX_DISTANCE_DEFAULT = 32
 
 local SESSION_COORD_CLEAR = 1
 local SESSION_COORD_BLOCKED = 2
-
+local SESSION_COORD_DISTANCE = math.huge
 local UPDATE_COORD_CLEAR = -1
 local UPDATE_COORD_BLOCKED = 1
+local UPDATE_COORD_DISTANCE = 2
 
 local sessionMidPoint
 local sessionMaxDistance
@@ -33,18 +31,18 @@ local serverMap
 local function distanceFunc(a, b)
 	local sessionMapA, sessionMapB = sessionMap:get(a), sessionMap:get(b)
 	if aStar.distance(a, sessionMidPoint) > sessionMaxDistance then
-		return math.huge -- first coord is outside the search region
+		return SESSION_COORD_DISTANCE -- first coord is outside the search region
 	elseif aStar.distance(b, sessionMidPoint) > sessionMaxDistance then
-		return math.huge -- second coord is outside the search region
+		return SESSION_COORD_DISTANCE -- second coord is outside the search region
 	elseif sessionMapA == SESSION_COORD_BLOCKED or sessionMapB == SESSION_COORD_BLOCKED then
-		return math.huge -- we have found one of these coords to be blocked during this session
+		return SESSION_COORD_DISTANCE -- we have found one of these coords to be blocked during this session
 	elseif sessionMapA == SESSION_COORD_CLEAR and sessionMapB == SESSION_COORD_CLEAR then
 		return aStar.distance(a, b) -- we have found both of these coords to be clear during this session
 	else
 		local serverMapA, serverMapB = serverMap:get(a), serverMap:get(b)
 		if serverMapA or serverMapB then
-			serverMapA = serverMapA and 2^(serverMapA + 1) or 1
-			serverMapB = serverMapB and 2^(serverMapB + 1) or 1
+			serverMapA = serverMapA and UPDATE_COORD_DISTANCE^(serverMapA + 1) or 1
+			serverMapB = serverMapB and UPDATE_COORD_DISTANCE^(serverMapB + 1) or 1
 			return math.max(serverMapA, serverMapB) -- the remote server map is indicating one of these coords may be blocked
 		end
 	end
@@ -254,16 +252,16 @@ local function _goto(x, y, z, maxDistance)
 	local goal = vector.new(tonumber(x), tonumber(y), tonumber(z))
 	
 	serverMap:check() -- remove timed out data we have received from server
-	sessionMap = aStar.newMap() -- reset the sessionMap
 
+	sessionMap = aStar.newMap() -- reset the sessionMap
 	sessionMidPoint = vector.new(math.floor((goal.x + position.x)/2), math.floor((goal.y + position.y)/2), math.floor((goal.z + position.z)/2))
 	sessionMaxDistance = (type(maxDistance) == "number" and maxDistance) or math.max(2*aStar.distance(sessionMidPoint, goal), SESSION_MAX_DISTANCE_DEFAULT)
-	
+
 	local path = aStar.compute(distanceFunc, position, goal)
 	if not path then
 		return false, "no known path to goal"
 	end
-	
+
 	while not (exit or aStar.vectorEquals(position, goal)) do
 		local movePos = table.remove(path)
 		while not move(position, movePos) do

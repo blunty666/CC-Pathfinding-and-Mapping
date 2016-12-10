@@ -18,10 +18,10 @@ if minX > maxX then minX, maxX = maxX, minX end
 if minY > maxY then minY, maxY = maxY, minY end
 if minZ > maxZ then minZ, maxZ = maxZ, minZ end
 
--- LOAD NETNAV API
-if not netNav then
-	if not os.loadAPI("netNav") then
-		error("could not load netNav API")
+-- LOAD STARNAV API
+if not starNav then
+	if not os.loadAPI("starNav") then
+		error("could not load starNav API")
 	end
 end
 
@@ -36,13 +36,13 @@ if not rednet.isOpen() then
 	return
 end
 
--- SET NETNAV MAP
+-- SET STARNAV MAP
 local mapName = tArgs[1]
 if type(mapName) ~= "string" then
 	printError("mapName must be string")
 	return
 end
-netNav.setMap(mapName, 15)
+starNav.setMap(mapName)
 
 local exit = false
 local returning = false
@@ -53,17 +53,17 @@ local function main()
 		local x = math.random(minX, maxX)
 		local y = math.random(minY, maxY)
 		local z = math.random(minZ, maxZ)
-		netNav.goto(x, y, z)
+		starNav.goto(x, y, z)
 	end
 	returning = true
-	netNav.goto(startX, startY, startZ)
+	starNav.goto(startX, startY, startZ)
 end
 
 local function control()
 	while true do
 		local senderID, message = rednet.receive("explore:return_to_base")
 		if not exit and not returning then
-			netNav.stop()
+			starNav.stop()
 			exit = true
 		end
 	end

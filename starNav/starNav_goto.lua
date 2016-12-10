@@ -1,7 +1,7 @@
 local function printUsage()
 	print("Usage:")
 	print(fs.getName(shell.getRunningProgram()).." <map_name> <x_pos> <y_pos> <z_pos> <(optional)max_distance>")
-	print("<map_name> The name of the remoteMap to connect to and use.")
+	print("<map_name> The name of the map to use.")
 	print("<x_pos> <y_pos> <z_pos> The GPS coordinates you want to go to.")
 	print("<(optional)max_distance> The farthest distance allowed to travel from start position.")
 end
