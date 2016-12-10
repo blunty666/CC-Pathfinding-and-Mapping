@@ -3,7 +3,7 @@ local apis = {
 	"aStar",
 	"location",
 }
-for _ api in ipairs(apis) do
+for _, api in ipairs(apis) do
 	if not _G[api] then
 		if not os.loadAPI(api) then
 			error("could not load API: "..api)
