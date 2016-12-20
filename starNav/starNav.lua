@@ -157,7 +157,7 @@ local function detectAll(currPos)
 end
 
 local function findSensor()
-	for _, side in ipairs(peripheral.getNames()) do
+	for _, side in ipairs({"left", "right"}) do
 		if peripheral.getType(side) == "turtlesensorenvironment" then
 			return side
 		end
@@ -240,6 +240,18 @@ local function _goto(x, y, z, maxDistance)
 		position = findPosition()
 		if not position then
 			return false, "couldn't determine location"
+		end
+	else
+		-- check if position has changed
+		local curPos = {gps.locate()}
+		if #curPos == 3 then
+			curPos = vector.new(unpack(curPos))
+			if not aStar.vectorEquals(curPos, position) then -- position has changed
+				position = findPosition()
+				if not position then
+					return false, "couldn't determine location"
+				end
+			end
 		end
 	end
 	
