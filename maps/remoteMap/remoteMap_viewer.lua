@@ -132,21 +132,21 @@ while cont do
 	local event = {os.pullEvent()}
 	if event[1] == "key" then
 		local key = event[2]
-		if key == keys.up then
+		if key == keys.up or key == keys.w then
 			currZ = currZ - 1
 			currH = math.min(height - 1, currH + 1)
-		elseif key == keys.down then
+		elseif key == keys.down or key == keys.s then
 			currZ = currZ + 1
 			currH = math.max(1, currH - 1)
-		elseif key == keys.left then
+		elseif key == keys.left or key == keys.a then
 			currX = currX - 1
 			currW = math.min(width, currW + 1)
-		elseif key == keys.right then
+		elseif key == keys.right or key == keys.d then
 			currX = currX + 1
 			currW = math.max(1, currW - 1)
-		elseif key == keys.numPadAdd then
+		elseif key == keys.numPadAdd or key == keys.e then
 			currY = currY + 1
-		elseif key == keys.numPadSubtract then
+		elseif key == keys.numPadSubtract or key == keys.q then
 			currY = currY - 1
 		elseif key == keys.backspace then
 			cont = false
