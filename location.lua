@@ -155,3 +155,20 @@ function new( x, y, z, h )
 	setmetatable( l, lmetatable )
 	return l
 end
+
+local headings = {
+	[vector.new(0, 0, 1)] = 0,
+	[vector.new(-1, 0, 0)] = 1,
+	[vector.new(0, 0, -1)] = 2,
+	[vector.new(1, 0, 0)] = 3,
+	[vector.new(0, 1, 0)] = 4,
+	[vector.new(0, -1, 0)] = 5,
+}
+
+function headingFromDelta(delta)
+	for vec, dir in pairs(headings) do
+		if aStar.vectorEquals(delta, vec) then
+			return dir
+		end
+	end
+end

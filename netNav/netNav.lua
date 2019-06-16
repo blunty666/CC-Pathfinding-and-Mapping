@@ -2,6 +2,7 @@ local apis = {
 	"remoteMap",
 	"aStar",
 	"location",
+	"scanStrategy",
 }
 for _, api in ipairs(apis) do
 	if not _G[api] then
@@ -49,23 +50,6 @@ local function distanceFunc(a, b)
 	return aStar.distance(a, b) -- we dont know anything useful so just calc the distance
 end
 
-local directions = {
-	[vector.new(0, 0, 1)] = 0,
-	[vector.new(-1, 0, 0)] = 1,
-	[vector.new(0, 0, -1)] = 2,
-	[vector.new(1, 0, 0)] = 3,
-	[vector.new(0, 1, 0)] = 4,
-	[vector.new(0, -1, 0)] = 5,
-}
-
-local function deltaToDirection(delta)
-	for vec, dir in pairs(directions) do
-		if aStar.vectorEquals(delta, vec) then
-			return dir
-		end
-	end
-end
-
 local function tryMove()
 	for i = 1, 4 do
 		if turtle.forward() then
@@ -107,31 +91,16 @@ local function findPosition()
 		error("no gps signal - phase 2")
 	end
 	
-	local direction = deltaToDirection(p1 - p2)
-	if direction and direction < 4 then
-		return location.new(p2.x, p2.y, p2.z, direction)
+	local currentDirection = location.headingFromDelta(p1 - p2)
+	if currentDirection and currentDirection < 4 then
+		return location.new(p2.x, p2.y, p2.z, currentDirection)
 	else
 		return false
 	end
 end
 
-local function detect(currPos, adjPos)
-	local direction = deltaToDirection(adjPos - currPos)
-	if direction then
-		position:setHeading(direction)
-		if direction == 4 then
-			return turtle.detectUp()
-		elseif direction == 5 then
-			return turtle.detectDown()
-		else
-			return turtle.detect()
-		end
-	end
-	return false
-end
-
 local function inspect(currPos, adjPos)
-	local direction = deltaToDirection(adjPos - currPos)
+	local direction = location.headingFromDelta(adjPos - currPos)
 	if direction then
 		position:setHeading(direction)
 		if direction == 4 then
@@ -145,81 +114,35 @@ local function inspect(currPos, adjPos)
 	return false
 end
 
-local function updateCoord(coord, isBlocked)
+local function updateSessionMap(coord, isBlocked)
 	if isBlocked then
 		sessionMap:set(coord, SESSION_COORD_BLOCKED)
-		serverMap:set(coord, UPDATE_COORD_BLOCKED)
 	else
 		sessionMap:set(coord, SESSION_COORD_CLEAR)
+	end
+end
+
+local function updateServerMap(coord, isBlocked)
+	if isBlocked then
+		serverMap:set(coord, UPDATE_COORD_BLOCKED)
+	else
 		serverMap:set(coord, UPDATE_COORD_CLEAR)
 	end
 end
 
-local function detectAll(currPos)
-	for _, pos in ipairs(aStar.adjacent(currPos)) do -- better order of checking directions
-		updateCoord(pos, detect(currPos, pos))
-	end
-end
-
-local function findSensor()
-	for _, side in ipairs({"left", "right"}) do
-		if peripheral.getType(side) == "turtlesensorenvironment" then
-			return side
-		end
-	end
-	return false
-end
-
-local function scan(currPos)
-	local sensorSide = findSensor()
-	if sensorSide then
-		local rawBlockInfo = peripheral.call(sensorSide, "sonicScan")
-		local sortedBlockInfo = aStar.newMap()
-		for _, blockInfo in ipairs(rawBlockInfo) do
-			sortedBlockInfo:set(currPos + vector.new(blockInfo.x, blockInfo.y, blockInfo.z), blockInfo)
-		end
-		local toCheckQueue = {}
-		for _, pos in ipairs(aStar.adjacent(currPos)) do
-			if sortedBlockInfo:get(pos) then
-				table.insert(toCheckQueue, pos)
-			end
-		end
-		while toCheckQueue[1] do
-			local pos = table.remove(toCheckQueue, 1)
-			local blockInfo = sortedBlockInfo:get(pos)
-			if blockInfo.type == "AIR" then
-				for _, pos2 in ipairs(aStar.adjacent(pos)) do
-					local blockInfo2 = sortedBlockInfo:get(pos2)
-					if blockInfo2 and not blockInfo2.checked then
-						table.insert(toCheckQueue, pos2)
-					end
-				end
-				updateCoord(pos, false)
-			else
-				updateCoord(pos, true)
-			end
-			blockInfo.checked = true
-		end
-		for _, blockInfo in ipairs(rawBlockInfo) do
-			local pos = currPos + vector.new(blockInfo.x, blockInfo.y, blockInfo.z)
-			local blockInfo = sortedBlockInfo:get(pos)
-			if not blockInfo.checked then
-				if blockInfo.type == "AIR" then
-					sessionMap:set(pos, SESSION_COORD_CLEAR)
-				else
-					sessionMap:set(pos, SESSION_COORD_BLOCKED)
-				end
-			end
-		end
+local function scan(currentPosition)
+	local strategy = scanStrategy.getBest()
+	if strategy then
+		strategy.execute(currentPosition, updateSessionMap, updateServerMap)
+		serverMap:check()
+		serverMap:pushUpdates()
 	else
-		detectAll(currPos)
+		-- throw error ?
 	end
-	serverMap:check()
-	serverMap:pushUpdates()
 end
 
 local function move(currPos, adjPos)
-	local direction = deltaToDirection(adjPos - currPos)
+	local direction = location.headingFromDelta(adjPos - currPos)
 	if direction then
 		position:setHeading(direction)
 		if direction == 4 then
@@ -355,4 +278,8 @@ function getPosition()
 	if position then
 		return position:value()
 	end
+end
+
+function addScanStrategy(strategy)
+	scanStrategy.add(strategy)
 end
